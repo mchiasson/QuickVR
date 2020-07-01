@@ -35,10 +35,12 @@ isEmpty(_OVR_SDK_ROOT) {
 
 SOURCES += \
         QuickVR_plugin.cpp \
+        VRHeadset.cpp \
         VRWindow.cpp
 
 HEADERS += \
         QuickVR_plugin.h \
+        VRHeadset.h \
         VRWindow.h
 
 PLUGINFILES= \

@@ -13,8 +13,9 @@ class VRWindow : public QQuickView
 
 public:
     explicit VRWindow(QWindow *parent = nullptr);
-    ~VRWindow() override;
+    virtual ~VRWindow() override;
 
+    VRRenderer *renderer() const { return m_renderer; }
 public slots:
     void sync();
 

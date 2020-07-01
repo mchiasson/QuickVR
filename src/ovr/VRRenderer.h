@@ -4,6 +4,7 @@
 #include <QtQuick/QQuickWindow>
 #include <QtGui/QOpenGLShaderProgram>
 #include <QtGui/QOpenGLExtraFunctions>
+#include <QtGui/QVector3D>
 
 #include <OVR_CAPI_GL.h>
 #include <Extras/OVR_Math.h>
@@ -18,10 +19,6 @@ public:
     VRRenderer(QQuickWindow *window);
     ~VRRenderer();
 
-    QQuickWindow *window() const { return m_window;}
-
-    void setViewportSize(const QSize &size) { m_viewportSize = size; }
-
     static void APIENTRY DebugGLCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam);
 
 public slots:
@@ -30,7 +27,6 @@ public slots:
     void cleanup();
 
 private:
-    QSize m_viewportSize;
     QQuickWindow *m_window;
     GLuint m_fboId = 0;
 
@@ -43,8 +39,9 @@ private:
     ovrSession session = nullptr;
     ovrGraphicsLuid luid = {};
 
-    float Yaw = 3.141592f;
-    OVR::Vector3f Pos2 = OVR::Vector3f(0.0f, 0.0f, -5.0f);
+public:
+    QQuaternion Orientation;
+    QVector3D Position;
 };
 
 #endif // VRRENDERER_H

@@ -1,5 +1,7 @@
 #include "VRRenderer.h"
 
+#include <QtGui/QMatrix4x4>
+
 #pragma comment(lib, "user32.lib")
 
 #if defined(_WIN32)
@@ -862,6 +864,8 @@ void VRRenderer::init()
 
 void VRRenderer::paint()
 {
+    //qDebug() << "context swap interval =" << QOpenGLContext::currentContext()->format().swapInterval();
+
     // Play nice with the RHI. Not strictly needed when the scenegraph uses
     // OpenGL directly.
     m_window->beginExternalCommands();
@@ -881,22 +885,6 @@ void VRRenderer::paint()
 
     if (sessionStatus.IsVisible)
     {
-        // Keyboard inputs to adjust player orientation
-        static float Yaw(3.141592f);
-#if 0
-        if (Platform.Key[VK_LEFT])  Yaw += 0.02f;
-        if (Platform.Key[VK_RIGHT]) Yaw -= 0.02f;
-#endif
-
-        // Keyboard inputs to adjust player position
-        static OVR::Vector3f Pos2(0.0f, 0.0f, -5.0f);
-#if 0
-        if (Platform.Key['W'] || Platform.Key[VK_UP])     Pos2 += OVR::Matrix4f::RotationY(Yaw).Transform(OVR::Vector3f(0, 0, -0.05f));
-        if (Platform.Key['S'] || Platform.Key[VK_DOWN])   Pos2 += OVR::Matrix4f::RotationY(Yaw).Transform(OVR::Vector3f(0, 0, +0.05f));
-        if (Platform.Key['D'])                            Pos2 += OVR::Matrix4f::RotationY(Yaw).Transform(OVR::Vector3f(+0.05f, 0, 0));
-        if (Platform.Key['A'])                            Pos2 += OVR::Matrix4f::RotationY(Yaw).Transform(OVR::Vector3f(-0.05f, 0, 0));
-#endif
-
         // Animate the cube
         static float cubeClock = 0;
         if (sessionStatus.HasInputFocus) // Pause the application if we are not supposed to have input.
@@ -924,11 +912,11 @@ void VRRenderer::paint()
             eyeRenderTexture[eye]->SetAndClearRenderSurface();
 
             // Get view and projection matrices
-            OVR::Matrix4f rollPitchYaw = OVR::Matrix4f::RotationY(Yaw);
+            OVR::Matrix4f rollPitchYaw = OVR::Matrix4f(OVR::Quatf(Orientation.x(), Orientation.y(), Orientation.z(), Orientation.scalar()));
             OVR::Matrix4f finalRollPitchYaw = rollPitchYaw * OVR::Matrix4f(EyeRenderPose[eye].Orientation);
             OVR::Vector3f finalUp = finalRollPitchYaw.Transform(OVR::Vector3f(0, 1, 0));
             OVR::Vector3f finalForward = finalRollPitchYaw.Transform(OVR::Vector3f(0, 0, -1));
-            OVR::Vector3f shiftedEyePos = Pos2 + rollPitchYaw.Transform(EyeRenderPose[eye].Position);
+            OVR::Vector3f shiftedEyePos = OVR::Vector3f(Position.x(), Position.y(), Position.z()) + rollPitchYaw.Transform(EyeRenderPose[eye].Position);
 
             OVR::Matrix4f view = OVR::Matrix4f::LookAtRH(shiftedEyePos, shiftedEyePos + finalForward, finalUp);
             OVR::Matrix4f proj = ovrMatrix4f_Projection(hmdDesc.DefaultEyeFov[eye], 0.2f, 1000.0f, ovrProjection_None);

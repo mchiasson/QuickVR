@@ -5,11 +5,6 @@ VRWindow::VRWindow(QWindow *parent)
     : QQuickView(parent)
 {
     connect(this, &QQuickWindow::beforeSynchronizing, this, &VRWindow::sync, Qt::DirectConnection);
-
-    QSurfaceFormat format = requestedFormat();
-    // Turn off vsync to let the compositor do its magic
-    format.setSwapInterval(0);
-    setFormat(format);
 }
 
 VRWindow::~VRWindow()
@@ -29,5 +24,4 @@ void VRWindow::sync()
         connect(this, &QQuickWindow::beforeRenderPassRecording, m_renderer, &VRRenderer::paint,   Qt::DirectConnection);
         connect(this, &QQuickWindow::sceneGraphInvalidated,     m_renderer, &VRRenderer::cleanup, Qt::DirectConnection);
     }
-    m_renderer->setViewportSize(size() * devicePixelRatio());
 }
