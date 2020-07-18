@@ -164,7 +164,7 @@ void SkinnedMesh::onRender()
             m_pEffect->SetBoneTransform(i, Transforms[i]);
         }
 
-        m_pEffect->SetEyeWorldPos(QVector3D(device()->headset()->x(), device()->headset()->y(), device()->headset()->z()));
+        m_pEffect->SetEyeWorldPos(device()->eyePosition());
 
         QMatrix4x4 ScalingM;
         ScalingM.scale(QVector3D(scale(), scale(), scale()));
