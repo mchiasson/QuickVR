@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     // This line is only necessary for QuickVR examples. Once QuickVR is
     // deployed/installed on your system, the application sould not have any
     // trouble finding QuickVR/quickvrplugin.dll or QuickVR/libquickvrplugin.so
-    engine.addImportPath(app.applicationDirPath() + "/../../../src/imports");
+    engine.addImportPath(app.applicationDirPath() + "/../../imports");
 
     engine.load("qrc:/main.qml");
 

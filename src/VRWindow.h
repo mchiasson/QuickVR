@@ -17,7 +17,7 @@ public:
 
     VRRenderer *renderer() const { return m_renderer; }
 public slots:
-    void sync();
+    void initRenderer();
 
 private:
     VRRenderer * m_renderer = nullptr;

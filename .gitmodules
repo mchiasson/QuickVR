@@ -1,0 +1,12 @@
+[submodule "src/3rdparty/assimp"]
+	path = 3rdparty/assimp
+	url = git@github.com:assimp/assimp.git
+[submodule "3rdparty/stb"]
+	path = 3rdparty/stb
+	url = https://github.com/nothings/stb
+[submodule "3rdparty/StructureOfArrays"]
+	path = 3rdparty/StructureOfArrays
+	url = git@github.com:Lunarsong/StructureOfArrays.git
+[submodule "3rdparty/glm"]
+	path = 3rdparty/glm
+	url = git@github.com:g-truc/glm.git

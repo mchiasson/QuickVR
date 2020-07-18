@@ -10,16 +10,16 @@
 #include <Extras/OVR_Math.h>
 
 struct OculusTextureBuffer;
-struct Scene;
+class SkinnedMesh;
 
-class VRRenderer : public QObject, protected QOpenGLExtraFunctions
+class VRRenderer : public QObject, public QOpenGLExtraFunctions
 {
     Q_OBJECT
 public:
-    VRRenderer(QQuickWindow *window);
+    explicit VRRenderer(QQuickWindow *window);
     ~VRRenderer();
 
-    static void APIENTRY DebugGLCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam);
+    ovrSession getSession() const { return session; }
 
 public slots:
     void init();
@@ -33,7 +33,7 @@ private:
     OculusTextureBuffer * eyeRenderTexture[2] = { nullptr, nullptr };
     ovrMirrorTexture mirrorTexture = nullptr;
     GLuint          mirrorFBO = 0;
-    Scene         * roomScene = nullptr;
+    SkinnedMesh         * roomScene = nullptr;
     long long frameIndex = 0;
 
     ovrSession session = nullptr;
@@ -43,5 +43,7 @@ public:
     QQuaternion Orientation;
     QVector3D Position;
 };
+
+
 
 #endif // VRRENDERER_H

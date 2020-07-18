@@ -1,10 +1,11 @@
 #include "VRWindow.h"
 #include "VRRenderer.h"
+#include "Node.h"
 
 VRWindow::VRWindow(QWindow *parent)
     : QQuickView(parent)
 {
-    connect(this, &QQuickWindow::beforeSynchronizing, this, &VRWindow::sync, Qt::DirectConnection);
+    direct_connect(this, &QQuickWindow::sceneGraphInitialized, this, &VRWindow::initRenderer);
 }
 
 VRWindow::~VRWindow()
@@ -16,12 +17,12 @@ VRWindow::~VRWindow()
     }
 }
 
-void VRWindow::sync()
+void VRWindow::initRenderer()
 {
     if (!m_renderer) {
         m_renderer = new VRRenderer(this);
-        connect(this, &QQuickWindow::beforeRendering,           m_renderer, &VRRenderer::init,    Qt::DirectConnection);
-        connect(this, &QQuickWindow::beforeRenderPassRecording, m_renderer, &VRRenderer::paint,   Qt::DirectConnection);
-        connect(this, &QQuickWindow::sceneGraphInvalidated,     m_renderer, &VRRenderer::cleanup, Qt::DirectConnection);
+        direct_connect(this, &QQuickWindow::beforeRendering,           m_renderer, &VRRenderer::init);
+        direct_connect(this, &QQuickWindow::beforeRenderPassRecording, m_renderer, &VRRenderer::paint);
+        direct_connect(this, &QQuickWindow::sceneGraphInvalidated,     m_renderer, &VRRenderer::cleanup);
     }
 }

@@ -1,5 +1,7 @@
 #include "VRRenderer.h"
 
+#include "DebugCallback.h"
+
 #include <QtGui/QMatrix4x4>
 
 #pragma comment(lib, "user32.lib")
@@ -553,7 +555,7 @@ struct Model: protected QOpenGLExtraFunctions
     }
 };
 
-struct Scene: protected QOpenGLExtraFunctions
+struct SkinnedMesh: protected QOpenGLExtraFunctions
 {
     int     numModels;
     Model * Models[10];
@@ -710,11 +712,11 @@ struct Scene: protected QOpenGLExtraFunctions
         Add(m);
     }
 
-    Scene() : numModels(0) {
+    SkinnedMesh() : numModels(0) {
         initializeOpenGLFunctions();
     }
 
-    Scene(bool includeIntensiveGPUobject) :
+    SkinnedMesh(bool includeIntensiveGPUobject) :
         numModels(0)
     {
         initializeOpenGLFunctions();
@@ -725,7 +727,7 @@ struct Scene: protected QOpenGLExtraFunctions
         while (numModels-- > 0)
             delete Models[numModels];
     }
-    ~Scene()
+    ~SkinnedMesh()
     {
         Release();
     }
@@ -747,46 +749,12 @@ VRRenderer::VRRenderer(QQuickWindow *window)
     initializeOpenGLFunctions();
 
 #ifndef NDEBUG
-    if (GL_ARB_debug_output)
-    {
-        PFNGLDEBUGMESSAGECALLBACKARBPROC glDebugMessageCallbackARB = (PFNGLDEBUGMESSAGECALLBACKARBPROC) QOpenGLContext::currentContext()->getProcAddress("glDebugMessageCallbackARB");
-        PFNGLDEBUGMESSAGECONTROLARBPROC glDebugMessageControlARB = (PFNGLDEBUGMESSAGECONTROLARBPROC) QOpenGLContext::currentContext()->getProcAddress("glDebugMessageControlARB");
-
-        if (glDebugMessageCallbackARB && glDebugMessageControlARB)
-        {
-            glDebugMessageCallbackARB(DebugGLCallback, NULL);
-            if (glGetError())
-            {
-                qCritical("glDebugMessageCallbackARB failed.\n");
-            }
-
-            glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB);
-
-            // Explicitly disable notification severity output.
-            glDebugMessageControlARB(GL_DEBUG_SOURCE_API, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, GL_FALSE);
-        }
-        else
-        {
-            qCritical("GL_ARB_debug_output extension not available.\n");
-        }
-    }
+    GL::DebugCallback::install(this);
 #endif
 }
 
 VRRenderer::~VRRenderer()
 {
-}
-
-void APIENTRY VRRenderer::DebugGLCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
-{
-    Q_UNUSED(source);
-    Q_UNUSED(type);
-    Q_UNUSED(id);
-    Q_UNUSED(severity);
-    Q_UNUSED(length);
-    Q_UNUSED(message);
-    Q_UNUSED(userParam);
-    qDebug("Message from OpenGL: %s\n", message);
 }
 
 void VRRenderer::init()
@@ -854,7 +822,7 @@ void VRRenderer::init()
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
         // Make scene - can simplify further if needed
-        roomScene = new Scene(false);
+        roomScene = new SkinnedMesh(false);
 
         // FloorLevel will give tracking poses where the floor height is 0
         ovr_SetTrackingOriginType(session, ovrTrackingOrigin_FloorLevel);
