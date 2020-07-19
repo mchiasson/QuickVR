@@ -1,8 +1,6 @@
 #ifndef TEXTURE_H
 #define TEXTURE_H
 
-#include <OVR_CAPI_GL.h>
-
 #include "Device.h"
 
 class Texture : Node

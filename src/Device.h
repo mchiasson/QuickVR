@@ -1,17 +1,20 @@
 #ifndef DEVICE_H
 #define DEVICE_H
 
-#include <QOpenGLExtraFunctions>
-#include <OVR_CAPI_GL.h>
-#include <QtGui/QVector3D>
-#include <QtGui/QQuaternion>
 #include <QElapsedTimer>
-#include <Headset.h>
+#include <QMatrix4x4>
+#include <QOpenGLExtraFunctions>
+#include <QQuaternion>
+#include <QVector3D>
 
+
+#ifdef HAVE_LIBOVR
+#include <OVR_CAPI_GL.h>
+#endif
+
+#include "Headset.h"
 #include "Node.h"
 #include "VRTypes.h"
-
-#include <Extras/OVR_Math.h>
 
 struct OculusTextureBuffer;
 
@@ -28,14 +31,17 @@ public:
     Headset *headset() const { return m_headset; }
     void setHeadset(Headset *newHeadset);
 
+#ifdef HAVE_LIBOVR
     ovrSession session() const { return m_session; }
     const ovrGraphicsLuid &luid() const { return m_luid; }
+#endif
 
     float t() const { return m_t; }
     float dt() const { return m_dt; }
 
-    const OVR::Matrix4f &view() const { return m_view; }
-    const OVR::Matrix4f &proj() const { return m_proj; }
+    const QMatrix4x4 &view() const { return m_view; }
+    const QMatrix4x4 &proj() const { return m_proj; }
+    const QVector3D &eyePosition() const { return m_eyePosition;}
 
 signals:
 
@@ -57,20 +63,24 @@ protected:
     float m_t = 0.0f;
     float m_dt = 0.0f;
 
-    OVR::Matrix4f m_view;
-    OVR::Matrix4f m_proj;
+    QMatrix4x4 m_view;
+    QMatrix4x4 m_proj;
+    QVector3D m_eyePosition;
 
     Headset *m_headset;
     Headset *m_defaultHeadset;
-    ovrSession m_session = nullptr;
-    ovrGraphicsLuid m_luid = {};
 
-    OculusTextureBuffer *m_eyeRenderTexture[2] = {};
-    ovrMirrorTexture m_mirrorTexture = nullptr;
-    GLuint m_mirrorFBO = 0;
     int64_t m_frameIndex = 0;
 
     QElapsedTimer m_runningTimer;
+
+#ifdef HAVE_LIBOVR
+    ovrSession m_session = nullptr;
+    ovrGraphicsLuid m_luid = {};
+    OculusTextureBuffer *m_eyeRenderTexture[2] = {};
+    ovrMirrorTexture m_mirrorTexture = nullptr;
+    GLuint m_mirrorFBO = 0;
+#endif
 };
 
 #endif // DEVICE_H

@@ -1,7 +1,7 @@
 #ifndef DEBUGCALLBACK_H
 #define DEBUGCALLBACK_H
 
-#include <QtGui/QOpenGLExtraFunctions>
+#include <QOpenGLExtraFunctions>
 
 class VRRenderer;
 

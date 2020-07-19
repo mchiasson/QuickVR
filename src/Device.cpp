@@ -7,7 +7,10 @@
 #include <QQuickWindow>
 #include <QGuiApplication>
 #include "DebugCallback.h"
+
+#ifdef HAVE_LIBOVR
 #include <Extras/OVR_Math.h>
+#endif
 
 #if defined(_WIN32)
 #include <dxgi.h> // for GetDefaultAdapterLuid
@@ -15,155 +18,155 @@
 #pragma comment(lib, "user32.lib")
 #endif
 
-
+#ifdef HAVE_LIBOVR
 #ifndef VALIDATE
 #define VALIDATE(x, msg) if (!(x)) { MessageBoxA(nullptr, (msg), qPrintable(qApp->applicationName()), MB_ICONERROR | MB_OK); exit(-1); }
 #endif
 
-        struct OculusTextureBuffer : protected QOpenGLExtraFunctions
+struct OculusTextureBuffer : protected QOpenGLExtraFunctions
+{
+    ovrSession          Session;
+    ovrTextureSwapChain ColorTextureChain;
+    ovrTextureSwapChain DepthTextureChain;
+    GLuint              fboId;
+    OVR::Sizei          texSize;
+
+    OculusTextureBuffer(ovrSession session, OVR::Sizei size, int sampleCount) :
+        Session(session),
+        ColorTextureChain(nullptr),
+        DepthTextureChain(nullptr),
+        fboId(0),
+        texSize(0, 0)
+    {
+        assert(sampleCount <= 1); // The code doesn't currently handle MSAA textures.
+
+        texSize = size;
+
+        // This texture isn't necessarily going to be a rendertarget, but it usually is.
+        assert(session); // No HMD? A little odd.
+
+        initializeOpenGLFunctions();
+
+        ovrTextureSwapChainDesc desc = {};
+        desc.Type = ovrTexture_2D;
+        desc.ArraySize = 1;
+        desc.Width = size.w;
+        desc.Height = size.h;
+        desc.MipLevels = 1;
+        desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
+        desc.SampleCount = sampleCount;
+        desc.StaticImage = ovrFalse;
+
         {
-            ovrSession          Session;
-            ovrTextureSwapChain ColorTextureChain;
-            ovrTextureSwapChain DepthTextureChain;
-            GLuint              fboId;
-            OVR::Sizei          texSize;
+            ovrResult result = ovr_CreateTextureSwapChainGL(Session, &desc, &ColorTextureChain);
 
-            OculusTextureBuffer(ovrSession session, OVR::Sizei size, int sampleCount) :
-                  Session(session),
-                  ColorTextureChain(nullptr),
-                  DepthTextureChain(nullptr),
-                  fboId(0),
-                  texSize(0, 0)
+            int length = 0;
+            ovr_GetTextureSwapChainLength(session, ColorTextureChain, &length);
+
+            if(OVR_SUCCESS(result))
             {
-                assert(sampleCount <= 1); // The code doesn't currently handle MSAA textures.
-
-                texSize = size;
-
-                // This texture isn't necessarily going to be a rendertarget, but it usually is.
-                assert(session); // No HMD? A little odd.
-
-                initializeOpenGLFunctions();
-
-                ovrTextureSwapChainDesc desc = {};
-                desc.Type = ovrTexture_2D;
-                desc.ArraySize = 1;
-                desc.Width = size.w;
-                desc.Height = size.h;
-                desc.MipLevels = 1;
-                desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
-                desc.SampleCount = sampleCount;
-                desc.StaticImage = ovrFalse;
-
+                for (int i = 0; i < length; ++i)
                 {
-                    ovrResult result = ovr_CreateTextureSwapChainGL(Session, &desc, &ColorTextureChain);
+                    GLuint chainTexId;
+                    ovr_GetTextureSwapChainBufferGL(Session, ColorTextureChain, i, &chainTexId);
+                    glBindTexture(GL_TEXTURE_2D, chainTexId);
 
-                    int length = 0;
-                    ovr_GetTextureSwapChainLength(session, ColorTextureChain, &length);
-
-                    if(OVR_SUCCESS(result))
-                    {
-                        for (int i = 0; i < length; ++i)
-                        {
-                            GLuint chainTexId;
-                            ovr_GetTextureSwapChainBufferGL(Session, ColorTextureChain, i, &chainTexId);
-                            glBindTexture(GL_TEXTURE_2D, chainTexId);
-
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                        }
-                    }
-                }
-
-                desc.Format = OVR_FORMAT_D32_FLOAT;
-
-                {
-                    ovrResult result = ovr_CreateTextureSwapChainGL(Session, &desc, &DepthTextureChain);
-
-                    int length = 0;
-                    ovr_GetTextureSwapChainLength(session, DepthTextureChain, &length);
-
-                    if (OVR_SUCCESS(result))
-                    {
-                        for (int i = 0; i < length; ++i)
-                        {
-                            GLuint chainTexId;
-                            ovr_GetTextureSwapChainBufferGL(Session, DepthTextureChain, i, &chainTexId);
-                            glBindTexture(GL_TEXTURE_2D, chainTexId);
-
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                        }
-                    }
-                }
-
-                glGenFramebuffers(1, &fboId);
-            }
-
-            ~OculusTextureBuffer()
-            {
-                if (ColorTextureChain)
-                {
-                    ovr_DestroyTextureSwapChain(Session, ColorTextureChain);
-                    ColorTextureChain = nullptr;
-                }
-                if (DepthTextureChain)
-                {
-                    ovr_DestroyTextureSwapChain(Session, DepthTextureChain);
-                    DepthTextureChain = nullptr;
-                }
-                if (fboId)
-                {
-                    glDeleteFramebuffers(1, &fboId);
-                    fboId = 0;
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
                 }
             }
+        }
 
-            OVR::Sizei GetSize() const
-            {
-                return texSize;
-            }
+        desc.Format = OVR_FORMAT_D32_FLOAT;
 
-            void SetAndClearRenderSurface()
+        {
+            ovrResult result = ovr_CreateTextureSwapChainGL(Session, &desc, &DepthTextureChain);
+
+            int length = 0;
+            ovr_GetTextureSwapChainLength(session, DepthTextureChain, &length);
+
+            if (OVR_SUCCESS(result))
             {
-                GLuint curColorTexId;
-                GLuint curDepthTexId;
+                for (int i = 0; i < length; ++i)
                 {
-                    int curIndex;
-                    ovr_GetTextureSwapChainCurrentIndex(Session, ColorTextureChain, &curIndex);
-                    ovr_GetTextureSwapChainBufferGL(Session, ColorTextureChain, curIndex, &curColorTexId);
+                    GLuint chainTexId;
+                    ovr_GetTextureSwapChainBufferGL(Session, DepthTextureChain, i, &chainTexId);
+                    glBindTexture(GL_TEXTURE_2D, chainTexId);
+
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
                 }
-                {
-                    int curIndex;
-                    ovr_GetTextureSwapChainCurrentIndex(Session, DepthTextureChain, &curIndex);
-                    ovr_GetTextureSwapChainBufferGL(Session, DepthTextureChain, curIndex, &curDepthTexId);
-                }
-
-                glBindFramebuffer(GL_FRAMEBUFFER, fboId);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, curColorTexId, 0);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, curDepthTexId, 0);
-
-                glViewport(0, 0, texSize.w, texSize.h);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                glEnable(GL_FRAMEBUFFER_SRGB);
             }
+        }
 
-            void UnsetRenderSurface()
-            {
-                glBindFramebuffer(GL_FRAMEBUFFER, fboId);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
-            }
+        glGenFramebuffers(1, &fboId);
+    }
 
-            void Commit()
-            {
-                ovr_CommitTextureSwapChain(Session, ColorTextureChain);
-                ovr_CommitTextureSwapChain(Session, DepthTextureChain);
-            }
-        };
+    ~OculusTextureBuffer()
+    {
+        if (ColorTextureChain)
+        {
+            ovr_DestroyTextureSwapChain(Session, ColorTextureChain);
+            ColorTextureChain = nullptr;
+        }
+        if (DepthTextureChain)
+        {
+            ovr_DestroyTextureSwapChain(Session, DepthTextureChain);
+            DepthTextureChain = nullptr;
+        }
+        if (fboId)
+        {
+            glDeleteFramebuffers(1, &fboId);
+            fboId = 0;
+        }
+    }
+
+    OVR::Sizei GetSize() const
+    {
+        return texSize;
+    }
+
+    void SetAndClearRenderSurface()
+    {
+        GLuint curColorTexId;
+        GLuint curDepthTexId;
+        {
+            int curIndex;
+            ovr_GetTextureSwapChainCurrentIndex(Session, ColorTextureChain, &curIndex);
+            ovr_GetTextureSwapChainBufferGL(Session, ColorTextureChain, curIndex, &curColorTexId);
+        }
+        {
+            int curIndex;
+            ovr_GetTextureSwapChainCurrentIndex(Session, DepthTextureChain, &curIndex);
+            ovr_GetTextureSwapChainBufferGL(Session, DepthTextureChain, curIndex, &curDepthTexId);
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, fboId);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, curColorTexId, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, curDepthTexId, 0);
+
+        glViewport(0, 0, texSize.w, texSize.h);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_FRAMEBUFFER_SRGB);
+    }
+
+    void UnsetRenderSurface()
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, fboId);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    }
+
+    void Commit()
+    {
+        ovr_CommitTextureSwapChain(Session, ColorTextureChain);
+        ovr_CommitTextureSwapChain(Session, DepthTextureChain);
+    }
+};
 
 
 static void OVR_CDECL LogCallback(uintptr_t /*userData*/, int /*level*/, const char* message)
@@ -202,7 +205,7 @@ static int Compare(const ovrGraphicsLuid& lhs, const ovrGraphicsLuid& rhs)
 {
     return memcmp(&lhs, &rhs, sizeof(ovrGraphicsLuid));
 }
-
+#endif
 
 Device::Device(Node *parent) : Node(parent)
 {
@@ -214,12 +217,12 @@ Device::Device(Node *parent) : Node(parent)
 
     connect(this, &QQuickItem::windowChanged,
             [&](QQuickWindow* window) {
-                if (window) {
-                    direct_connect(window, &QQuickWindow::sceneGraphInitialized, this, &Device::onSceneGraphInitialized);
-                    direct_connect(window, &QQuickWindow::beforeRenderPassRecording, this, &Device::onBeforeRenderPassRecording);
-                    direct_connect(window, &QQuickWindow::sceneGraphAboutToStop, this, &Device::onSceneGraphAboutToStop);
-                }
-            });
+        if (window) {
+            direct_connect(window, &QQuickWindow::sceneGraphInitialized, this, &Device::onSceneGraphInitialized);
+            direct_connect(window, &QQuickWindow::beforeRenderPassRecording, this, &Device::onBeforeRenderPassRecording);
+            direct_connect(window, &QQuickWindow::sceneGraphAboutToStop, this, &Device::onSceneGraphAboutToStop);
+        }
+    });
 }
 
 void Device::setHeadset(Headset *newHeadset)
@@ -240,6 +243,13 @@ void Device::setHeadset(Headset *newHeadset)
 
 void Device::onSceneGraphInitialized()
 {
+    initializeOpenGLFunctions();
+
+#ifndef NDEBUG
+    GL::DebugCallback::install(this);
+#endif
+
+#ifdef HAVE_LIBOVR
     // Initializes LibOVR, and the Rift
     ovrInitParams initParams = { ovrInit_RequestVersion | ovrInit_FocusAware, OVR_MINOR_VERSION, LogCallback, 0, 0 };
 
@@ -249,16 +259,10 @@ void Device::onSceneGraphInitialized()
     QSGRendererInterface *rif = window()->rendererInterface();
     VALIDATE(rif->graphicsApi() == QSGRendererInterface::OpenGL || rif->graphicsApi() == QSGRendererInterface::OpenGLRhi, "Only OpenGL is supported at this time.");
 
-    initializeOpenGLFunctions();
-
-#ifndef NDEBUG
-    GL::DebugCallback::install(this);
-#endif
-
     result = ovr_Create(&m_session, &m_luid);
     VALIDATE(OVR_SUCCESS(result), "unable to create session.")
 
-    if (Compare(m_luid, GetDefaultAdapterLuid())) // If luid that the Rift is on is not the default adapter LUID...
+            if (Compare(m_luid, GetDefaultAdapterLuid())) // If luid that the Rift is on is not the default adapter LUID...
     {
         VALIDATE(false, "OpenGL supports only the default graphics adapter.");
     }
@@ -306,6 +310,7 @@ void Device::onSceneGraphInitialized()
 
     // FloorLevel will give tracking poses where the floor height is 0
     ovr_SetTrackingOriginType(m_session, ovrTrackingOrigin_FloorLevel);
+#endif
 
     emit init();
 
@@ -318,6 +323,7 @@ void Device::onBeforeRenderPassRecording()
     // OpenGL directly.
     window()->beginExternalCommands();
 
+#ifdef HAVE_LIBOVR
     ovrHmdDesc hmdDesc = ovr_GetHmdDesc(m_session);
 
     ovrSessionStatus sessionStatus;
@@ -341,7 +347,7 @@ void Device::onBeforeRenderPassRecording()
         // Get eye poses, feeding in correct IPD offset
         ovrPosef EyeRenderPose[2];
         ovrPosef HmdToEyePose[2] = { eyeRenderDesc[0].HmdToEyePose,
-                                    eyeRenderDesc[1].HmdToEyePose};
+                                     eyeRenderDesc[1].HmdToEyePose};
 
         double sensorSampleTime;    // sensorSampleTime is fed into the layer later
         ovr_GetEyePoses(m_session, m_frameIndex, ovrTrue, HmdToEyePose, EyeRenderPose, &sensorSampleTime);
@@ -424,6 +430,32 @@ void Device::onBeforeRenderPassRecording()
                       0, 0, w, h,
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+#else
+
+    glViewport(0, 0, width(), height());
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    QQuaternion Orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), m_headset->rotation());
+    QVector3D Position = QVector3D(m_headset->x(), m_headset->y(), m_headset->z());
+
+    // Get view and projection matrices
+    QMatrix4x4 rollPitchYaw;
+    rollPitchYaw.rotate(Orientation);
+    QVector3D up = rollPitchYaw * QVector3D(0, 1, 0);
+    QVector3D forward = rollPitchYaw * QVector3D(0, 0, -1);
+
+    m_eyePosition = Position;
+
+    m_view = QMatrix4x4();
+    m_view.lookAt(m_eyePosition, m_eyePosition + forward, up);
+    m_proj = QMatrix4x4();
+    m_proj.perspective(45.0, width() / height(), 0.2f, 1000.0);
+
+    // Render world
+    emit render();
+
+
+#endif
 
     // Not strictly needed for this example, but generally useful for when
     // mixing with raw OpenGL.

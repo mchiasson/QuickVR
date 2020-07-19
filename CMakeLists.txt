@@ -10,22 +10,6 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-file(TO_CMAKE_PATH "$ENV{OVR_SDK_ROOT}" OVR_SDK_ROOT)
-
-if (OVR_SDK_ROOT STREQUAL "")
-    message(FATAL_ERROR "OVR_SDK_ROOT environment variable was not set.")
-endif()
-
-add_library(OVR STATIC
-    ${OVR_SDK_ROOT}/LibOVR/Shim/OVR_CAPIShim.c
-    ${OVR_SDK_ROOT}/LibOVR/Shim/OVR_CAPI_Util.cpp
-    ${OVR_SDK_ROOT}/LibOVR/Shim/OVR_StereoProjection.cpp
-)
-
-target_include_directories(OVR PUBLIC
-    ${OVR_SDK_ROOT}/LibOVR/Include
-)
-
 add_library(quickvrplugin SHARED
 
     src/imports/${PROJECT_NAME}/qmldir
@@ -56,10 +40,10 @@ add_library(quickvrplugin SHARED
     src/Texture.h
     src/Headset.cpp
     src/Headset.h
-    src/VRRenderer.cpp
-    src/VRRenderer.h
-    src/VRWindow.cpp
-    src/VRWindow.h
+    #src/VRRenderer.cpp
+    #src/VRRenderer.h
+    #src/VRWindow.cpp
+    #src/VRWindow.h
 )
 
 target_link_libraries(quickvrplugin PRIVATE
@@ -67,7 +51,6 @@ target_link_libraries(quickvrplugin PRIVATE
     Qt5::Quick
     Qt5::Qml
     Qt5::Concurrent
-    OVR
     assimp
     stb
     StructureOfArrays
@@ -90,6 +73,27 @@ add_custom_command(TARGET quickvrplugin POST_BUILD
         ${CMAKE_SOURCE_DIR}/src/imports/${PROJECT_NAME}/qmldir
         ${CMAKE_BINARY_DIR}/imports/${PROJECT_NAME}/qmldir
 )
+
+if(DEFINED $ENV{OVR_SDK_ROOT})
+
+    file(TO_CMAKE_PATH "$ENV{OVR_SDK_ROOT}" OVR_SDK_ROOT)
+
+    add_library(OVR STATIC
+        ${OVR_SDK_ROOT}/LibOVR/Shim/OVR_CAPIShim.c
+        ${OVR_SDK_ROOT}/LibOVR/Shim/OVR_CAPI_Util.cpp
+        ${OVR_SDK_ROOT}/LibOVR/Shim/OVR_StereoProjection.cpp
+    )
+
+    target_include_directories(OVR PUBLIC
+        ${OVR_SDK_ROOT}/LibOVR/Include
+    )
+
+    target_compile_definitions(OVR PUBLIC HAVE_LIBOVR)
+
+    target_link_libraries(quickvrplugin PRIVATE OVR)
+
+endif()
+
 
 add_subdirectory(examples)
 add_subdirectory(3rdparty)
