@@ -3,7 +3,6 @@
 
 #include <QQuickItem>
 #include <QVector3D>
-#include <QQuaternion>
 
 #define direct_connect(sender, senderSignal, receiver, receiverSlot) connect(sender, senderSignal, receiver, receiverSlot, Qt::ConnectionType(Qt::DirectConnection|Qt::UniqueConnection))
 

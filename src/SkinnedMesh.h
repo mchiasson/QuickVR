@@ -50,7 +50,7 @@ public:
     ShaderProgram *shaderProgram() const { return m_shaderProgram; }
     void setShaderProgram(ShaderProgram *newShaderProgram);
 
-    void BoneTransform(float TimeInSeconds, QVector<QMatrix4x4>& Transforms);
+    void BoneTransform(float TimeInSeconds, QVector<glm::mat4>& Transforms);
 
 signals:
 
@@ -76,8 +76,8 @@ protected:
 
     struct BoneInfo
     {
-        QMatrix4x4 BoneOffset;
-        QMatrix4x4 FinalTransformation;
+        glm::mat4 BoneOffset;
+        glm::mat4 FinalTransformation;
     };
 
     struct VertexBoneData
@@ -95,22 +95,22 @@ protected:
     };
 
     void Clear();
-    void CalcInterpolatedScaling(QVector3D& Out, float AnimationTime, const aiNodeAnim* pNodeAnim);
-    void CalcInterpolatedRotation(QQuaternion& Out, float AnimationTime, const aiNodeAnim* pNodeAnim);
-    void CalcInterpolatedPosition(QVector3D& Out, float AnimationTime, const aiNodeAnim* pNodeAnim);
+    void CalcInterpolatedScaling(glm::vec3& Out, float AnimationTime, const aiNodeAnim* pNodeAnim);
+    void CalcInterpolatedRotation(glm::quat& Out, float AnimationTime, const aiNodeAnim* pNodeAnim);
+    void CalcInterpolatedPosition(glm::vec3& Out, float AnimationTime, const aiNodeAnim* pNodeAnim);
     uint32_t FindScaling(float AnimationTime, const aiNodeAnim* pNodeAnim);
     uint32_t FindRotation(float AnimationTime, const aiNodeAnim* pNodeAnim);
     uint32_t FindPosition(float AnimationTime, const aiNodeAnim* pNodeAnim);
     const aiNodeAnim* FindNodeAnim(const aiAnimation* pAnimation, const QString &NodeName);
-    void ReadNodeHeirarchy(float AnimationTime, const aiNode* pNode, const QMatrix4x4& ParentTransform);
+    void ReadNodeHeirarchy(float AnimationTime, const aiNode* pNode, const glm::mat4& ParentTransform);
     bool InitFromScene(const aiScene* pScene);
     void InitMesh(uint32_t MeshIndex,
                   const aiMesh* paiMesh,
-                  QVector<QVector3D>& Positions,
-                  QVector<QVector3D>& Normals,
+                  QVector<glm::vec3>& Positions,
+                  QVector<glm::vec3>& Normals,
                   QVector<QVector2D>& TexCoords,
                   QVector<VertexBoneData>& Bones,
-                  QVector<uint16_t>& Indices);
+                  QVector<uint32_t>& Indices);
     void LoadBones(uint32_t MeshIndex, const aiMesh* paiMesh, QVector<VertexBoneData>& Bones);
     bool InitMaterials(const aiScene* pScene);
 
@@ -147,7 +147,7 @@ protected:
     QHash<QString, uint32_t> m_BoneMapping; // maps a bone name to its index
     uint32_t m_NumBones = 0;
     QVector<BoneInfo> m_BoneInfo;
-    QMatrix4x4 m_GlobalInverseTransform;
+    glm::mat4 m_GlobalInverseTransform;
 
     ShaderProgram *m_shaderProgram = nullptr;
 };

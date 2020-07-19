@@ -2,7 +2,7 @@
 #define SHADERPROGRAM_H
 
 #include <QOpenGLExtraFunctions>
-#include <QMatrix4x4>
+#include <glm/mat4x4.hpp>
 
 #include "DirectionalLight.h"
 #include "PointLight.h"
@@ -45,16 +45,16 @@ public:
     GLint getUniformLocation(const char* pUniformName);
     GLint getProgramParam(GLint param);
 
-    void setMVP(const QMatrix4x4& mvp);
-    void setModel(const QMatrix4x4 &model);
+    void setMVP(const glm::mat4& mvp);
+    void setModel(const glm::mat4 &model);
     void setColorTextureUnit(uint textureUnit);
     void setDirectionalLight(const DirectionalLight& light);
     void setPointLights(uint NumLights, const PointLight* lights);
     void setSpotLights(uint NumLights, const SpotLight* lights);
-    void setEyeWorldPos(const QVector3D& eyeWorldPos);
+    void setEyeWorldPos(const glm::vec3& eyeWorldPos);
     void setMatSpecularIntensity(float intensity);
     void setMatSpecularPower(float power);
-    void setBoneTransform(uint index, const QMatrix4x4& transform);
+    void setBoneTransform(uint index, const glm::mat4& transform);
 
 signals:
 
@@ -82,49 +82,51 @@ protected:
     GLint m_linkStatus = GL_FALSE;
     QString m_linkInfoLog;
 
-    GLuint m_MVPLocation;
-    GLuint m_modelLocation;
-    GLuint m_colorTextureLocation;
-    GLuint m_eyeWorldPosLocation;
-    GLuint m_matSpecularIntensityLocation;
-    GLuint m_matSpecularPowerLocation;
-    GLuint m_numPointLightsLocation;
-    GLuint m_numSpotLightsLocation;
+    GLuint m_MVPLocation = -1;
+    GLuint m_modelLocation = -1;
+    GLuint m_colorTextureLocation = -1;
+    GLuint m_eyeWorldPosLocation = -1;
+    GLuint m_matSpecularIntensityLocation = -1;
+    GLuint m_matSpecularPowerLocation = -1;
+    GLuint m_numPointLightsLocation = -1;
+    GLuint m_numSpotLightsLocation = -1;
 
     struct {
-        GLuint Color;
-        GLuint AmbientIntensity;
-        GLuint DiffuseIntensity;
-        GLuint Direction;
+        GLuint Color = -1;
+        GLuint AmbientIntensity = -1;
+        GLuint DiffuseIntensity = -1;
+        GLuint Direction = -1;
     } m_dirLightLocation;
 
     struct {
-        GLuint Color;
-        GLuint AmbientIntensity;
-        GLuint DiffuseIntensity;
-        GLuint Position;
+        GLuint Color = -1;
+        GLuint AmbientIntensity = -1;
+        GLuint DiffuseIntensity = -1;
+        GLuint Position = -1;
         struct {
-            GLuint Constant;
-            GLuint Linear;
-            GLuint Exp;
+            GLuint Constant = -1;
+            GLuint Linear = -1;
+            GLuint Exp = -1;
         } Atten;
     } m_pointLightsLocation[MAX_POINT_LIGHTS];
 
     struct {
-        GLuint Color;
-        GLuint AmbientIntensity;
-        GLuint DiffuseIntensity;
-        GLuint Position;
-        GLuint Direction;
-        GLuint Cutoff;
+        GLuint Color = -1;
+        GLuint AmbientIntensity = -1;
+        GLuint DiffuseIntensity = -1;
+        GLuint Position = -1;
+        GLuint Direction = -1;
+        GLuint Cutoff = -1;
         struct {
-            GLuint Constant;
-            GLuint Linear;
-            GLuint Exp;
+            GLuint Constant = -1;
+            GLuint Linear = -1;
+            GLuint Exp = -1;
         } Atten;
     } m_spotLightsLocation[MAX_SPOT_LIGHTS];
 
-    GLuint m_boneLocation[MAX_BONES];
+    struct {
+        GLuint Bone = -1;
+    } m_boneLocation[MAX_BONES];
 };
 
 #endif /* SHADERPROGRAM_H */

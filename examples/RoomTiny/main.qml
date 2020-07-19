@@ -4,8 +4,8 @@ import QuickVR 1.0
 
 Window {
     visible: true
-    width: 640
-    height: 480
+    width: 1080
+    height: 600
     title: qsTr("RoomTiny")
     color: "skyblue"
 

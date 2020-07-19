@@ -53,7 +53,7 @@ target_link_libraries(quickvrplugin PRIVATE
     Qt5::Concurrent
     assimp
     stb
-    StructureOfArrays
+    glm
 )
 
 target_include_directories(quickvrplugin PRIVATE
@@ -74,7 +74,7 @@ add_custom_command(TARGET quickvrplugin POST_BUILD
         ${CMAKE_BINARY_DIR}/imports/${PROJECT_NAME}/qmldir
 )
 
-if(DEFINED $ENV{OVR_SDK_ROOT})
+if(DEFINED ENV{OVR_SDK_ROOT})
 
     file(TO_CMAKE_PATH "$ENV{OVR_SDK_ROOT}" OVR_SDK_ROOT)
 

@@ -124,10 +124,9 @@ GLint ShaderProgram::getUniformLocation(const char* pUniformName)
 {
     GLuint location = device()->glGetUniformLocation(handle(), pUniformName);
 
-    if (!location)
+    if (location == -1)
     {
-        qWarning() <<
-        fprintf(stderr, "Warning! Unable to get the location of uniform '%s'\n", pUniformName);
+        qWarning() << "Warning! Unable to get the location of uniform" << pUniformName;
     }
 
     return location;
@@ -141,14 +140,14 @@ GLint ShaderProgram::getProgramParam(GLint param)
 }
 
 
-void ShaderProgram::setMVP(const QMatrix4x4& mvp)
+void ShaderProgram::setMVP(const glm::mat4& mvp)
 {
-    device()->glUniformMatrix4fv(m_MVPLocation, 1, GL_TRUE, mvp.data());
+    device()->glUniformMatrix4fv(m_MVPLocation, 1, GL_TRUE, &mvp[0][0]);
 }
 
-void ShaderProgram::setModel(const QMatrix4x4 &model)
+void ShaderProgram::setModel(const glm::mat4 &model)
 {
-    device()->glUniformMatrix4fv(m_modelLocation, 1, GL_TRUE, model.data());
+    device()->glUniformMatrix4fv(m_modelLocation, 1, GL_TRUE, &model[0][0]);
 }
 
 void ShaderProgram::setColorTextureUnit(uint textureUnit)
@@ -160,9 +159,8 @@ void ShaderProgram::setDirectionalLight(const DirectionalLight& light)
 {
     device()->glUniform3f(m_dirLightLocation.Color, light.color().redF(), light.color().greenF(), light.color().blueF());
     device()->glUniform1f(m_dirLightLocation.AmbientIntensity, light.ambientIntensity());
-    QVector3D direction = light.direction();
-    direction.normalize();
-    device()->glUniform3f(m_dirLightLocation.Direction, direction.x(), direction.y(), direction.z());
+    glm::vec3 direction = glm::normalize(glm::vec3(light.direction().x(), light.direction().y(), light.direction().z()));
+    device()->glUniform3f(m_dirLightLocation.Direction, direction.x, direction.y, direction.z);
     device()->glUniform1f(m_dirLightLocation.DiffuseIntensity, light.diffuseIntensity());
 }
 
@@ -190,9 +188,8 @@ void ShaderProgram::setSpotLights(uint NumLights, const SpotLight* pLights)
         device()->glUniform1f(m_spotLightsLocation[i].AmbientIntensity, pLights[i].ambientIntensity());
         device()->glUniform1f(m_spotLightsLocation[i].DiffuseIntensity, pLights[i].diffuseIntensity());
         device()->glUniform3f(m_spotLightsLocation[i].Position, pLights[i].x(), pLights[i].y(), pLights[i].z());
-        QVector3D direction = pLights[i].direction();
-        direction.normalize();
-        device()->glUniform3f(m_spotLightsLocation[i].Direction, direction.x(), direction.y(), direction.z());
+        glm::vec3 direction = glm::normalize(glm::vec3(pLights[i].direction().x(), pLights[i].direction().y(), pLights[i].direction().z()));
+        device()->glUniform3f(m_spotLightsLocation[i].Direction, direction.x, direction.y, direction.z);
         device()->glUniform1f(m_spotLightsLocation[i].Cutoff, cosf(qDegreesToRadians(pLights[i].cutoff())));
         device()->glUniform1f(m_spotLightsLocation[i].Atten.Constant, pLights[i].attenuationConstant());
         device()->glUniform1f(m_spotLightsLocation[i].Atten.Linear,   pLights[i].attenuationLinear());
@@ -200,9 +197,9 @@ void ShaderProgram::setSpotLights(uint NumLights, const SpotLight* pLights)
     }
 }
 
-void ShaderProgram::setEyeWorldPos(const QVector3D& eyeWorldPos)
+void ShaderProgram::setEyeWorldPos(const glm::vec3& eyeWorldPos)
 {
-    device()->glUniform3f(m_eyeWorldPosLocation, eyeWorldPos.x(), eyeWorldPos.y(), eyeWorldPos.z());
+    device()->glUniform3f(m_eyeWorldPosLocation, eyeWorldPos.x, eyeWorldPos.y, eyeWorldPos.z);
 }
 
 void ShaderProgram::setMatSpecularIntensity(float intensity)
@@ -215,9 +212,9 @@ void ShaderProgram::setMatSpecularPower(float power)
     device()->glUniform1f(m_matSpecularPowerLocation, power);
 }
 
-void ShaderProgram::setBoneTransform(uint index, const QMatrix4x4& transform)
+void ShaderProgram::setBoneTransform(uint index, const glm::mat4& transform)
 {
-    device()->glUniformMatrix4fv(m_boneLocation[index], 1, GL_TRUE, transform.data());
+    device()->glUniformMatrix4fv(m_boneLocation[index].Bone, 1, GL_TRUE, &transform[0][0]);
 }
 
 void ShaderProgram::onInit()
@@ -236,8 +233,7 @@ void ShaderProgram::onUpdate()
 {
     if (linkStatus() == GL_TRUE) return; // already linked.
 
-    // make sure the shaders are all present and compiled. Don't disconnect from
-    // the update signal until we're in good shape.
+    // make sure the shaders are all present and compiled.
 
     if (shaderCount() < 2) return;
 
@@ -245,9 +241,6 @@ void ShaderProgram::onUpdate()
     {
         if (shader(i)->handle() == 0 || !shader(i)->compileStatus()) return;
     }
-
-    // ok, we can safely disconnect
-    disconnect(device(), &Device::update, this, &ShaderProgram::onUpdate);
 
     if (handle())
     {
@@ -349,7 +342,7 @@ void ShaderProgram::onUpdate()
             for (unsigned int i = 0 ; i < ARRAY_SIZE_IN_ELEMENTS(m_boneLocation) ; i++) {
                 memset(Name, 0, sizeof(Name));
                 snprintf(Name, sizeof(Name), "uBones[%d]", i);
-                m_boneLocation[i] = getUniformLocation(Name);
+                m_boneLocation[i].Bone = getUniformLocation(Name);
             }
         }
         else

@@ -143,7 +143,11 @@ void SkinnedMesh::onRender()
 
         m_pScene  =  m_importerFutureWatcher.result()->GetScene();
 
-        m_GlobalInverseTransform = QMatrix4x4(m_pScene->mRootNode->mTransformation[0]).inverted();
+        m_GlobalInverseTransform = glm::inverse(glm::mat4(m_pScene->mRootNode->mTransformation[0][0],m_pScene->mRootNode->mTransformation[0][1],m_pScene->mRootNode->mTransformation[0][2], m_pScene->mRootNode->mTransformation[0][3],
+                                                          m_pScene->mRootNode->mTransformation[1][0],m_pScene->mRootNode->mTransformation[1][1],m_pScene->mRootNode->mTransformation[1][2], m_pScene->mRootNode->mTransformation[1][3],
+                                                          m_pScene->mRootNode->mTransformation[2][0],m_pScene->mRootNode->mTransformation[2][1],m_pScene->mRootNode->mTransformation[2][2], m_pScene->mRootNode->mTransformation[2][3],
+                                                          m_pScene->mRootNode->mTransformation[3][0],m_pScene->mRootNode->mTransformation[3][1],m_pScene->mRootNode->mTransformation[3][2], m_pScene->mRootNode->mTransformation[3][3]));
+
         InitFromScene(m_pScene);
 
         // Make sure the VAO is not changed from the outside
@@ -154,34 +158,26 @@ void SkinnedMesh::onRender()
     }
     case Ready:
     {
-        m_pEffect->Enable();
+        if (m_shaderProgram->linkStatus() != GL_TRUE) break;
 
-        QVector<QMatrix4x4> Transforms;
+        m_shaderProgram->bind();
 
+        QVector<glm::mat4> Transforms;
         BoneTransform(device()->t(), Transforms);
 
-        for (uint i = 0 ; i < Transforms.size() ; i++) {
-            m_pEffect->SetBoneTransform(i, Transforms[i]);
+        for (int i = 0 ; i < Transforms.size() ; i++) {
+            m_shaderProgram->setBoneTransform(i, Transforms[i]);
         }
 
-        m_pEffect->SetEyeWorldPos(device()->eyePosition());
+        m_shaderProgram->setEyeWorldPos(device()->eyePosition());
 
-        QMatrix4x4 ScalingM;
-        ScalingM.scale(QVector3D(scale(), scale(), scale()));
+        // Combine the transformations (TRS)
+        glm::mat4 Model = glm::scale(glm::rotate(glm::translate(glm::mat4(1), glm::vec3(x(), y(), z())), glm::radians((float)rotation()), glm::vec3(0,1,0)), glm::vec3(scale(), scale(), scale()));
 
-        QMatrix4x4 RotationM;
-        RotationM.rotate(rotation(), QVector3D(0, 1, 0)); // TODO make it more than Y rotation.
+        glm::mat4 MVP = device()->proj() * device()->view() * Model;
 
-        QMatrix4x4 TranslationM;
-        TranslationM.translate(QVector3D(x(), y(), z()));
-
-        // Combine the above transformations (TRS)
-        QMatrix4x4 Model = TranslationM * RotationM * ScalingM;
-
-        QMatrix4x4 MVP = Model * device()->view() * device()->proj();
-
-        m_pEffect->SetMVP(MVP);
-        m_pEffect->SetModel(Model);
+        m_shaderProgram->setMVP(MVP);
+        m_shaderProgram->setModel(Model);
 
         device()->glBindVertexArray(m_VAO);
 
@@ -247,11 +243,11 @@ bool SkinnedMesh::InitFromScene(const aiScene* pScene)
     m_Entries.resize(pScene->mNumMeshes);
     m_Textures.resize(pScene->mNumMaterials);
 
-    QVector<QVector3D> Positions;
-    QVector<QVector3D> Normals;
+    QVector<glm::vec3> Positions;
+    QVector<glm::vec3> Normals;
     QVector<QVector2D> TexCoords;
     QVector<VertexBoneData> Bones;
-    QVector<uint16_t> Indices;
+    QVector<uint32_t> Indices;
 
     uint32_t NumVertices = 0;
     uint32_t NumIndices = 0;
@@ -318,11 +314,11 @@ bool SkinnedMesh::InitFromScene(const aiScene* pScene)
 
 void SkinnedMesh::InitMesh(uint MeshIndex,
                            const aiMesh* paiMesh,
-                           QVector<QVector3D>& Positions,
-                           QVector<QVector3D>& Normals,
+                           QVector<glm::vec3>& Positions,
+                           QVector<glm::vec3>& Normals,
                            QVector<QVector2D>& TexCoords,
                            QVector<VertexBoneData>& Bones,
-                           QVector<uint16_t>& Indices)
+                           QVector<uint32_t>& Indices)
 {
     const aiVector3D Zero3D(0.0f, 0.0f, 0.0f);
 
@@ -332,8 +328,8 @@ void SkinnedMesh::InitMesh(uint MeshIndex,
         const aiVector3D* pNormal   = &(paiMesh->mNormals[i]);
         const aiVector3D* pTexCoord = paiMesh->HasTextureCoords(0) ? &(paiMesh->mTextureCoords[0][i]) : &Zero3D;
 
-        Positions.push_back(QVector3D(pPos->x, pPos->y, pPos->z));
-        Normals.push_back(QVector3D(pNormal->x, pNormal->y, pNormal->z));
+        Positions.push_back(glm::vec3(pPos->x, pPos->y, pPos->z));
+        Normals.push_back(glm::vec3(pNormal->x, pNormal->y, pNormal->z));
         TexCoords.push_back(QVector2D(pTexCoord->x, pTexCoord->y));
     }
 
@@ -361,7 +357,10 @@ void SkinnedMesh::LoadBones(uint MeshIndex, const aiMesh* pMesh, QVector<VertexB
             m_NumBones++;
             BoneInfo bi;
             m_BoneInfo.push_back(bi);
-            m_BoneInfo[BoneIndex].BoneOffset = QMatrix4x4(pMesh->mBones[i]->mOffsetMatrix[0]);
+            m_BoneInfo[BoneIndex].BoneOffset = glm::mat4(pMesh->mBones[i]->mOffsetMatrix[0][0],pMesh->mBones[i]->mOffsetMatrix[0][1],pMesh->mBones[i]->mOffsetMatrix[0][2],pMesh->mBones[i]->mOffsetMatrix[0][3],
+                                                         pMesh->mBones[i]->mOffsetMatrix[1][0],pMesh->mBones[i]->mOffsetMatrix[1][1],pMesh->mBones[i]->mOffsetMatrix[1][2],pMesh->mBones[i]->mOffsetMatrix[1][3],
+                                                         pMesh->mBones[i]->mOffsetMatrix[2][0],pMesh->mBones[i]->mOffsetMatrix[2][1],pMesh->mBones[i]->mOffsetMatrix[2][2],pMesh->mBones[i]->mOffsetMatrix[2][3],
+                                                         pMesh->mBones[i]->mOffsetMatrix[3][0],pMesh->mBones[i]->mOffsetMatrix[3][1],pMesh->mBones[i]->mOffsetMatrix[3][2],pMesh->mBones[i]->mOffsetMatrix[3][3]);
             m_BoneMapping[BoneName] = BoneIndex;
         }
         else {
@@ -477,10 +476,10 @@ uint SkinnedMesh::FindScaling(float AnimationTime, const aiNodeAnim* pNodeAnim)
 }
 
 
-void SkinnedMesh::CalcInterpolatedPosition(QVector3D& Out, float AnimationTime, const aiNodeAnim* pNodeAnim)
+void SkinnedMesh::CalcInterpolatedPosition(glm::vec3& Out, float AnimationTime, const aiNodeAnim* pNodeAnim)
 {
     if (pNodeAnim->mNumPositionKeys == 1) {
-        Out = QVector3D(pNodeAnim->mPositionKeys[0].mValue.x, pNodeAnim->mPositionKeys[0].mValue.y, pNodeAnim->mPositionKeys[0].mValue.z);
+        Out = glm::vec3(pNodeAnim->mPositionKeys[0].mValue.x, pNodeAnim->mPositionKeys[0].mValue.y, pNodeAnim->mPositionKeys[0].mValue.z);
         return;
     }
 
@@ -490,18 +489,18 @@ void SkinnedMesh::CalcInterpolatedPosition(QVector3D& Out, float AnimationTime, 
     float DeltaTime = (float)(pNodeAnim->mPositionKeys[NextPositionIndex].mTime - pNodeAnim->mPositionKeys[PositionIndex].mTime);
     float Factor = (AnimationTime - (float)pNodeAnim->mPositionKeys[PositionIndex].mTime) / DeltaTime;
     assert(Factor >= 0.0f && Factor <= 1.0f);
-    const QVector3D Start(pNodeAnim->mPositionKeys[PositionIndex].mValue.x, pNodeAnim->mPositionKeys[PositionIndex].mValue.y, pNodeAnim->mPositionKeys[PositionIndex].mValue.z);
-    const QVector3D End(pNodeAnim->mPositionKeys[NextPositionIndex].mValue.x, pNodeAnim->mPositionKeys[NextPositionIndex].mValue.y, pNodeAnim->mPositionKeys[NextPositionIndex].mValue.z);
-    QVector3D Delta = End - Start;
+    const glm::vec3 Start(pNodeAnim->mPositionKeys[PositionIndex].mValue.x, pNodeAnim->mPositionKeys[PositionIndex].mValue.y, pNodeAnim->mPositionKeys[PositionIndex].mValue.z);
+    const glm::vec3 End(pNodeAnim->mPositionKeys[NextPositionIndex].mValue.x, pNodeAnim->mPositionKeys[NextPositionIndex].mValue.y, pNodeAnim->mPositionKeys[NextPositionIndex].mValue.z);
+    glm::vec3 Delta = End - Start;
     Out = Start + Factor * Delta;
 }
 
 
-void SkinnedMesh::CalcInterpolatedRotation(QQuaternion& Out, float AnimationTime, const aiNodeAnim* pNodeAnim)
+void SkinnedMesh::CalcInterpolatedRotation(glm::quat& Out, float AnimationTime, const aiNodeAnim* pNodeAnim)
 {
     // we need at least two values to interpolate...
     if (pNodeAnim->mNumRotationKeys == 1) {
-        Out = QQuaternion(pNodeAnim->mRotationKeys[0].mValue.w, pNodeAnim->mRotationKeys[0].mValue.x, pNodeAnim->mRotationKeys[0].mValue.y, pNodeAnim->mRotationKeys[0].mValue.z);
+        Out = glm::quat(pNodeAnim->mRotationKeys[0].mValue.w, pNodeAnim->mRotationKeys[0].mValue.x, pNodeAnim->mRotationKeys[0].mValue.y, pNodeAnim->mRotationKeys[0].mValue.z);
         return;
     }
 
@@ -511,17 +510,16 @@ void SkinnedMesh::CalcInterpolatedRotation(QQuaternion& Out, float AnimationTime
     float DeltaTime = (float)(pNodeAnim->mRotationKeys[NextRotationIndex].mTime - pNodeAnim->mRotationKeys[RotationIndex].mTime);
     float Factor = (AnimationTime - (float)pNodeAnim->mRotationKeys[RotationIndex].mTime) / DeltaTime;
     assert(Factor >= 0.0f && Factor <= 1.0f);
-    const QQuaternion StartRotationQ(pNodeAnim->mRotationKeys[RotationIndex].mValue.w, pNodeAnim->mRotationKeys[RotationIndex].mValue.x, pNodeAnim->mRotationKeys[RotationIndex].mValue.y, pNodeAnim->mRotationKeys[RotationIndex].mValue.z);
-    const QQuaternion EndRotationQ(pNodeAnim->mRotationKeys[NextRotationIndex].mValue.w, pNodeAnim->mRotationKeys[NextRotationIndex].mValue.x, pNodeAnim->mRotationKeys[NextRotationIndex].mValue.y, pNodeAnim->mRotationKeys[NextRotationIndex].mValue.z);
-    Out = QQuaternion::slerp(StartRotationQ, EndRotationQ, Factor);
-    Out.normalize();
+    const glm::quat StartRotationQ(pNodeAnim->mRotationKeys[RotationIndex].mValue.w, pNodeAnim->mRotationKeys[RotationIndex].mValue.x, pNodeAnim->mRotationKeys[RotationIndex].mValue.y, pNodeAnim->mRotationKeys[RotationIndex].mValue.z);
+    const glm::quat EndRotationQ(pNodeAnim->mRotationKeys[NextRotationIndex].mValue.w, pNodeAnim->mRotationKeys[NextRotationIndex].mValue.x, pNodeAnim->mRotationKeys[NextRotationIndex].mValue.y, pNodeAnim->mRotationKeys[NextRotationIndex].mValue.z);
+    Out = glm::normalize(glm::slerp(StartRotationQ, EndRotationQ, Factor));
 }
 
 
-void SkinnedMesh::CalcInterpolatedScaling(QVector3D& Out, float AnimationTime, const aiNodeAnim* pNodeAnim)
+void SkinnedMesh::CalcInterpolatedScaling(glm::vec3& Out, float AnimationTime, const aiNodeAnim* pNodeAnim)
 {
     if (pNodeAnim->mNumScalingKeys == 1) {
-        Out = QVector3D(pNodeAnim->mScalingKeys[0].mValue.x, pNodeAnim->mScalingKeys[0].mValue.y, pNodeAnim->mScalingKeys[0].mValue.z);
+        Out = glm::vec3(pNodeAnim->mScalingKeys[0].mValue.x, pNodeAnim->mScalingKeys[0].mValue.y, pNodeAnim->mScalingKeys[0].mValue.z);
         return;
     }
 
@@ -531,47 +529,45 @@ void SkinnedMesh::CalcInterpolatedScaling(QVector3D& Out, float AnimationTime, c
     float DeltaTime = (float)(pNodeAnim->mScalingKeys[NextScalingIndex].mTime - pNodeAnim->mScalingKeys[ScalingIndex].mTime);
     float Factor = (AnimationTime - (float)pNodeAnim->mScalingKeys[ScalingIndex].mTime) / DeltaTime;
     assert(Factor >= 0.0f && Factor <= 1.0f);
-    const QVector3D Start(pNodeAnim->mScalingKeys[ScalingIndex].mValue.x, pNodeAnim->mScalingKeys[ScalingIndex].mValue.y, pNodeAnim->mScalingKeys[ScalingIndex].mValue.z);
-    const QVector3D End(pNodeAnim->mScalingKeys[NextScalingIndex].mValue.x, pNodeAnim->mScalingKeys[NextScalingIndex].mValue.y, pNodeAnim->mScalingKeys[NextScalingIndex].mValue.z);
-    QVector3D Delta = End - Start;
+    const glm::vec3 Start(pNodeAnim->mScalingKeys[ScalingIndex].mValue.x, pNodeAnim->mScalingKeys[ScalingIndex].mValue.y, pNodeAnim->mScalingKeys[ScalingIndex].mValue.z);
+    const glm::vec3 End(pNodeAnim->mScalingKeys[NextScalingIndex].mValue.x, pNodeAnim->mScalingKeys[NextScalingIndex].mValue.y, pNodeAnim->mScalingKeys[NextScalingIndex].mValue.z);
+    glm::vec3 Delta = End - Start;
     Out = Start + Factor * Delta;
 }
 
 
-void SkinnedMesh::ReadNodeHeirarchy(float AnimationTime, const aiNode* pNode, const QMatrix4x4& ParentTransform)
+void SkinnedMesh::ReadNodeHeirarchy(float AnimationTime, const aiNode* pNode, const glm::mat4& ParentTransform)
 {
     QString NodeName(pNode->mName.data);
 
     const aiAnimation* pAnimation = m_pScene->mAnimations[0];
 
-    QMatrix4x4 NodeTransformation(pNode->mTransformation[0]);
+    glm::mat4 NodeTransformation(pNode->mTransformation[0][0],pNode->mTransformation[0][1],pNode->mTransformation[0][2],pNode->mTransformation[0][3],
+                                 pNode->mTransformation[1][0],pNode->mTransformation[1][1],pNode->mTransformation[1][2],pNode->mTransformation[1][3],
+                                 pNode->mTransformation[2][0],pNode->mTransformation[2][1],pNode->mTransformation[2][2],pNode->mTransformation[2][3],
+                                 pNode->mTransformation[3][0],pNode->mTransformation[3][1],pNode->mTransformation[3][2],pNode->mTransformation[3][3]);
 
     const aiNodeAnim* pNodeAnim = FindNodeAnim(pAnimation, NodeName);
 
     if (pNodeAnim) {
         // Interpolate scaling and generate scaling transformation matrix
-        QVector3D Scaling;
+        glm::vec3 Scaling;
         CalcInterpolatedScaling(Scaling, AnimationTime, pNodeAnim);
-        QMatrix4x4 ScalingM;
-        ScalingM.scale(Scaling);
 
         // Interpolate rotation and generate rotation transformation matrix
-        QQuaternion RotationQ;
+        glm::quat RotationQ;
         CalcInterpolatedRotation(RotationQ, AnimationTime, pNodeAnim);
-        QMatrix4x4 RotationM;
-        RotationM.rotate(RotationQ);
 
         // Interpolate translation and generate translation transformation matrix
-        QVector3D Translation;
+        glm::vec3 Translation;
         CalcInterpolatedPosition(Translation, AnimationTime, pNodeAnim);
-        QMatrix4x4 TranslationM;
-        TranslationM.translate(Translation);
 
         // Combine the above transformations (TRS)
-        NodeTransformation = TranslationM * RotationM * ScalingM;
+        NodeTransformation = glm::scale(glm::translate(glm::mat4(NodeTransformation), Translation) * glm::mat4(RotationQ), Scaling);
+
     }
 
-    QMatrix4x4 GlobalTransformation = ParentTransform * NodeTransformation;
+    glm::mat4 GlobalTransformation = ParentTransform * NodeTransformation;
 
     if (m_BoneMapping.find(NodeName) != m_BoneMapping.end()) {
         uint BoneIndex = m_BoneMapping[NodeName];
@@ -592,9 +588,11 @@ void SkinnedMesh::setShaderProgram(ShaderProgram *newShaderProgram)
     }
 }
 
-void SkinnedMesh::BoneTransform(float TimeInSeconds, QVector<QMatrix4x4>& Transforms)
+void SkinnedMesh::BoneTransform(float TimeInSeconds, QVector<glm::mat4>& Transforms)
 {
-    QMatrix4x4 Identity;
+    if (!m_pScene->HasAnimations()) return;
+
+    glm::mat4 Identity;
 
     float TicksPerSecond = (float)(m_pScene->mAnimations[0]->mTicksPerSecond != 0 ? m_pScene->mAnimations[0]->mTicksPerSecond : 25.0f);
     float TimeInTicks = TimeInSeconds * TicksPerSecond;

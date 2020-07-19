@@ -1,16 +1,18 @@
 #include "Device.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
 #include <QDebug>
 #include <QQuickWindow>
 #include <QGuiApplication>
-#include "DebugCallback.h"
+#include <QtMath>
+#include <glm/gtx/transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #ifdef HAVE_LIBOVR
 #include <Extras/OVR_Math.h>
 #endif
+
+#include "DebugCallback.h"
+#include "RoomScene.h"
 
 #if defined(_WIN32)
 #include <dxgi.h> // for GetDefaultAdapterLuid
@@ -310,7 +312,9 @@ void Device::onSceneGraphInitialized()
 
     // FloorLevel will give tracking poses where the floor height is 0
     ovr_SetTrackingOriginType(m_session, ovrTrackingOrigin_FloorLevel);
+
 #endif
+    m_roomScene = new RoomScene(false);
 
     emit init();
 
@@ -322,6 +326,19 @@ void Device::onBeforeRenderPassRecording()
     // Play nice with the RHI. Not strictly needed when the scenegraph uses
     // OpenGL directly.
     window()->beginExternalCommands();
+
+    static float prev_t = 0;
+    m_t =  m_runningTimer.elapsed() / 1000.0f;
+    m_dt = m_t - prev_t;
+    prev_t = m_t;
+
+    // Animate the cube
+    static float cubeClock = 0;
+    m_roomScene->Models[0]->Pos = glm::vec3(9 * (float)sin(cubeClock), 3, 9 * (float)cos(cubeClock += 0.015f));
+
+    // Update world
+    emit update();
+
 
 #ifdef HAVE_LIBOVR
     ovrHmdDesc hmdDesc = ovr_GetHmdDesc(m_session);
@@ -354,35 +371,36 @@ void Device::onBeforeRenderPassRecording()
 
         ovrTimewarpProjectionDesc posTimewarpProjectionDesc = {};
 
-        static float prev_t = 0;
-        m_t =  m_runningTimer.elapsed() / 1000.0f;
-        m_dt = m_t - prev_t;
-        prev_t = m_t;
-
-        // Update world
-        emit update();
-
-        QQuaternion Orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), m_headset->rotation());
-        QVector3D Position = QVector3D(m_headset->x(), m_headset->y(), m_headset->z());
+        glm::vec3 camPosition    = glm::vec3(m_headset->x(), m_headset->y(), m_headset->z());
+        glm::quat camOrientation = glm::angleAxis(glm::radians((float)m_headset->rotation()), glm::vec3(0.0f, 1.0f, 0.0f));
 
         // Render Scene to Eye Buffers
         for (int eye = 0; eye < 2; ++eye)
         {
             // Switch to eye render target
             m_eyeRenderTexture[eye]->SetAndClearRenderSurface();
+            m_eyeOrientation = camOrientation * glm::quat(EyeRenderPose[eye].Orientation.w, EyeRenderPose[eye].Orientation.x, EyeRenderPose[eye].Orientation.y, EyeRenderPose[eye].Orientation.z);
 
             // Get view and projection matrices
-            OVR::Matrix4f rollPitchYaw = OVR::Matrix4f(OVR::Quatf(Orientation.x(), Orientation.y(), Orientation.z(), Orientation.scalar()));
-            OVR::Matrix4f finalRollPitchYaw = rollPitchYaw * OVR::Matrix4f(EyeRenderPose[eye].Orientation);
-            OVR::Vector3f finalUp = finalRollPitchYaw.Transform(OVR::Vector3f(0, 1, 0));
-            OVR::Vector3f finalForward = finalRollPitchYaw.Transform(OVR::Vector3f(0, 0, -1));
-            OVR::Vector3f shiftedEyePos = OVR::Vector3f(Position.x(), Position.y(), Position.z()) + rollPitchYaw.Transform(EyeRenderPose[eye].Position);
+            glm::vec3 up     = m_eyeOrientation * glm::vec3(0,  1,  0);
+            glm::vec3 center = m_eyeOrientation * glm::vec3(0,  0, -1);
+            m_eyePosition = camPosition + camOrientation * glm::vec3(EyeRenderPose[eye].Position.x, EyeRenderPose[eye].Position.y, EyeRenderPose[eye].Position.z);
 
-            m_view = OVR::Matrix4f::LookAtRH(shiftedEyePos, shiftedEyePos + finalForward, finalUp);
-            m_proj = ovrMatrix4f_Projection(hmdDesc.DefaultEyeFov[eye], 0.2f, 1000.0f, ovrProjection_None);
-            posTimewarpProjectionDesc = ovrTimewarpProjectionDesc_FromProjection(m_proj, ovrProjection_None);
+            m_view = glm::lookAt(m_eyePosition, m_eyePosition + center, up);
+
+            // TODO replace by glm::perspective once we know how to get the FOV angle out of hmdDesc.DefaultEyeFov[eye]. This would eliminiate the need of converting from row major OVR::Matrix4f to column major glm::mat4
+            OVR::Matrix4f proj = ovrMatrix4f_Projection(hmdDesc.DefaultEyeFov[eye], 0.2f, 1000.0f, ovrProjection_None);
+            posTimewarpProjectionDesc = ovrTimewarpProjectionDesc_FromProjection(proj, ovrProjection_None);
+
+            // convert from row major OVR::Matrix4f to column major glm::mat4
+            m_proj = glm::mat4(
+                proj.M[0][0], proj.M[1][0], proj.M[2][0], proj.M[3][0],
+                proj.M[0][1], proj.M[1][1], proj.M[2][1], proj.M[3][1],
+                proj.M[0][2], proj.M[1][2], proj.M[2][2], proj.M[3][2],
+                proj.M[0][3], proj.M[1][3], proj.M[2][3], proj.M[3][3]);
 
             // Render world
+            m_roomScene->Render(m_view, m_proj);
             emit render();
 
             // Avoids an error when calling SetAndClearRenderSurface during next iteration.
@@ -432,28 +450,21 @@ void Device::onBeforeRenderPassRecording()
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 #else
 
-    glViewport(0, 0, width(), height());
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    QQuaternion Orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), m_headset->rotation());
-    QVector3D Position = QVector3D(m_headset->x(), m_headset->y(), m_headset->z());
+    m_eyePosition.x = m_headset->x();
+    m_eyePosition.y = m_headset->y()+2;
+    m_eyePosition.z = m_headset->z();
+    m_eyeOrientation = glm::angleAxis(glm::radians((float)m_headset->rotation()), glm::vec3(0.0f, 1.0f, 0.0f));
 
     // Get view and projection matrices
-    QMatrix4x4 rollPitchYaw;
-    rollPitchYaw.rotate(Orientation);
-    QVector3D up = rollPitchYaw * QVector3D(0, 1, 0);
-    QVector3D forward = rollPitchYaw * QVector3D(0, 0, -1);
-
-    m_eyePosition = Position;
-
-    m_view = QMatrix4x4();
-    m_view.lookAt(m_eyePosition, m_eyePosition + forward, up);
-    m_proj = QMatrix4x4();
-    m_proj.perspective(45.0, width() / height(), 0.2f, 1000.0);
+    glm::vec3 up = m_eyeOrientation * glm::vec3(0, 1, 0);
+    glm::vec3 forward = m_eyeOrientation * glm::vec3(0, 0, -1);
+    m_view = glm::lookAt(m_eyePosition, m_eyePosition + forward, up);
+    m_proj = glm::perspective(glm::radians(45.0f), (float)width() / (float)height(), 0.2f, 1000.0f);
 
     // Render world
+    m_roomScene->Render(m_view, m_proj);
     emit render();
-
 
 #endif
 
@@ -471,4 +482,15 @@ void Device::onBeforeRenderPassRecording()
 void Device::onSceneGraphAboutToStop()
 {
     emit shutdown();
+
+    delete m_roomScene;
+#ifdef HAVE_LIBOVR
+    if (m_mirrorFBO) glDeleteFramebuffers(1, &m_mirrorFBO);
+    if (m_mirrorTexture) ovr_DestroyMirrorTexture(m_session, m_mirrorTexture);
+    for (int eye = 0; eye < 2; ++eye)
+    {
+        delete m_eyeRenderTexture[eye];
+    }
+    ovr_Destroy(m_session);
+#endif
 }
