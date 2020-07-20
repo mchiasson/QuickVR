@@ -3,51 +3,167 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-Texture::~Texture()
+Texture::Bitmap::~Bitmap()
 {
-    if (m_texId)
+    if (data)
     {
-        m_device->glDeleteTextures(1, &m_texId);
-        m_texId = 0;
+        stbi_image_free(data);
+        data = nullptr;
     }
 }
 
-bool Texture::load(const QString &path, int format, int sampleMode)
+Texture::Texture(Node *parent) : Node(parent)
 {
-    int width, height, comp;
-    QByteArray contentData;
-    QFile content;
-    if (path.startsWith("qrc:", Qt::CaseInsensitive))
+    connect(&m_dataFutureWatcher, &QFutureWatcher<QByteArray>::finished, this, &Texture::onImageDecodingComplete);
+}
+
+void Texture::setSource(QString newSource)
+{
+    if (m_source != newSource)
     {
-        content.setFileName(path.mid(3)); // Keep the ':'. This is not a mistake.
+        m_source = newSource;
+        emit sourceChanged(newSource);
+
+        setStatus(Loading);
+
+        // Load the scene from a thread in Qt's thread pool.
+        m_dataFutureWatcher.setFuture(QtConcurrent::run([](QString path)->QSharedPointer<Bitmap> {
+            QSharedPointer<Bitmap> bitmap(new Bitmap);
+
+            QFile content;
+            if (path.startsWith("qrc:", Qt::CaseInsensitive))
+            {
+                content.setFileName(path.mid(3)); // Keep the ':'. This is not a mistake.
+            }
+            else if (path.startsWith("file:", Qt::CaseInsensitive))
+            {
+                content.setFileName(QUrl(path).toLocalFile());
+            }
+            else
+            {
+                content.setFileName(path);
+            }
+
+            if (content.open(QFile::ReadOnly))
+            {
+                QByteArray encodedData = content.readAll();
+                bitmap->data = stbi_load_from_memory((const uint8_t *)encodedData.constData(), encodedData.size(), &bitmap->width, &bitmap->height, &bitmap->channelCount, STBI_rgb_alpha);
+
+                if (!bitmap->data)
+                {
+                    qCritical() << "Could not decode" << path << ":" << stbi_failure_reason();
+                }
+
+                content.close();
+            }
+            else
+            {
+                qCritical() << path << "not found!";
+            }
+
+            return bitmap;
+        }, newSource));
+
     }
-    else if (path.startsWith("file:", Qt::CaseInsensitive))
+
+}
+
+void Texture::setStatus(Status newStatus)
+{
+    if (m_status != newStatus)
     {
-        content.setFileName(QUrl(path).toLocalFile());
+        m_status = newStatus;
+        emit statusChanged(newStatus);
+    }
+}
+
+
+void Texture::bind(int slot) const
+{
+    if (handle())
+    {
+        device()->glActiveTexture(GL_TEXTURE0 + slot);
+        device()->glBindTexture(target(), handle());
+    }
+}
+
+void Texture::setSampleMode(int sm)
+{
+    if (handle() == 0) return;
+
+    bind(0);
+
+    switch (sm & Sample_FilterMask)
+    {
+    case Sample_Linear:
+        device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        if(GL_EXT_texture_filter_anisotropic)
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+        break;
+
+    case Sample_Anisotropic:
+        device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        if(GL_EXT_texture_filter_anisotropic)
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 4);
+        break;
+
+    case Sample_Nearest:
+        device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        if(GL_EXT_texture_filter_anisotropic)
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+        break;
+    }
+
+    switch (sm & Sample_AddressMask)
+    {
+    case Sample_Repeat:
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, GL_REPEAT);
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, GL_REPEAT);
+        break;
+
+    case Sample_Clamp:
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        break;
+
+    case Sample_ClampBorder:
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        break;
+    }
+}
+
+void Texture::onImageDecodingComplete()
+{
+    QSharedPointer<Bitmap> bitmap = m_dataFutureWatcher.result();
+    if (bitmap->data)
+    {
+        setStatus(Processing);
     }
     else
     {
-        content.setFileName(path);
+        setStatus(Error);
     }
+}
 
-    if (content.open(QFile::ReadOnly))
+void Texture::onUpdate()
+{
+    switch(status())
     {
-        contentData = content.readAll();
-        content.close();
-    }
-    else
+    case Processing:
     {
-        qCritical() << path << "not found!";
-        return false;
-    }
+        QSharedPointer<Bitmap> bitmap = m_dataFutureWatcher.result();
 
-    unsigned char *data = stbi_load_from_memory((const uint8_t *)contentData.constData(), contentData.size(), &width, &height, &comp, STBI_rgb_alpha);
+        //TODO
+        int format = Texture_RGBA;
+        int sampleMode = Sample_Anisotropic | Sample_Clamp;
 
-    if (nullptr != data)
-    {
-        if (m_texId == 0)
+        if (handle() == 0)
         {
-            m_device->glGenTextures(1, &m_texId);
+            device()->glGenTextures(1, &m_handle);
         }
 
         bool isDepth = ((format & Texture_DepthMask) != 0);
@@ -153,86 +269,36 @@ bool Texture::load(const QString &path, int format, int sampleMode)
             qFatal("Unknown texture format");
         }
 
-        m_textureTarget = GL_TEXTURE_2D;
+        m_target = GL_TEXTURE_2D;
 
         if (format & Texture_Cubemap)
         {
-            m_textureTarget = GL_TEXTURE_CUBE_MAP;
-            m_device->glEnable(GL_TEXTURE_CUBE_MAP);
+            m_target = GL_TEXTURE_CUBE_MAP;
+            device()->glEnable(GL_TEXTURE_CUBE_MAP);
         }
 
-        m_device->glBindTexture(m_textureTarget, m_texId);
-        m_device->glTexImage2D(m_textureTarget, 0, internalFormat, width, height, 0, glformat, gltype, data);
-        m_device->glGenerateMipmap(m_textureTarget);
+        device()->glBindTexture(target(), handle());
+        device()->glTexImage2D(target(), 0, internalFormat, bitmap->width, bitmap->height, 0, glformat, gltype, bitmap->data);
+        device()->glGenerateMipmap(target());
 
         setSampleMode(sampleMode);
 
-        stbi_image_free(data);
-        return true;
+        stbi_image_free(bitmap->data);
+        bitmap->data = nullptr;
+        break;
     }
-    else
-    {
-        qCritical() << "Could not load" << path << ":" << stbi_failure_reason();
+    default:
+        break;
     }
-
-    return false;
 }
 
-void Texture::bind(int slot) const
+void Texture::onShutdown()
 {
-    if (m_texId == 0) return;
-    m_device->glActiveTexture(GL_TEXTURE0 + slot);
-    m_device->glBindTexture(m_textureTarget, m_texId);
-}
-
-void Texture::setSampleMode(int sm)
-{
-    if (m_texId == 0) return;
-
-    bind(0);
-
-    switch (sm & Sample_FilterMask)
+    if (handle())
     {
-    case Sample_Linear:
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        if(GL_EXT_texture_filter_anisotropic)
-            m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
-        break;
-
-    case Sample_Anisotropic:
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        if(GL_EXT_texture_filter_anisotropic)
-            m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MAX_ANISOTROPY_EXT, 4);
-        break;
-
-    case Sample_Nearest:
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        if(GL_EXT_texture_filter_anisotropic)
-            m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
-        break;
-    }
-
-    switch (sm & Sample_AddressMask)
-    {
-    case Sample_Repeat:
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        break;
-
-    case Sample_Clamp:
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        break;
-
-    case Sample_ClampBorder:
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        m_device->glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        break;
+        device()->glDeleteTextures(1, &m_handle);
+        m_handle = 0;
     }
 }
-
 
 

@@ -245,7 +245,7 @@ bool SkinnedMesh::InitFromScene(const aiScene* pScene)
 
     QVector<glm::vec3> Positions;
     QVector<glm::vec3> Normals;
-    QVector<QVector2D> TexCoords;
+    QVector<glm::vec2> TexCoords;
     QVector<VertexBoneData> Bones;
     QVector<uint32_t> Indices;
 
@@ -316,7 +316,7 @@ void SkinnedMesh::InitMesh(uint MeshIndex,
                            const aiMesh* paiMesh,
                            QVector<glm::vec3>& Positions,
                            QVector<glm::vec3>& Normals,
-                           QVector<QVector2D>& TexCoords,
+                           QVector<glm::vec2>& TexCoords,
                            QVector<VertexBoneData>& Bones,
                            QVector<uint32_t>& Indices)
 {
@@ -330,7 +330,7 @@ void SkinnedMesh::InitMesh(uint MeshIndex,
 
         Positions.push_back(glm::vec3(pPos->x, pPos->y, pPos->z));
         Normals.push_back(glm::vec3(pNormal->x, pNormal->y, pNormal->z));
-        TexCoords.push_back(QVector2D(pTexCoord->x, pTexCoord->y));
+        TexCoords.push_back(glm::vec2(pTexCoord->x, pTexCoord->y));
     }
 
     LoadBones(MeshIndex, paiMesh, Bones);
@@ -411,7 +411,7 @@ bool SkinnedMesh::InitMaterials(const aiScene* pScene)
 
                 QString FullPath = Dir + "/" + p;
 
-                m_Textures[i] = new Texture();
+                m_Textures[i] = new Texture(this);
                 m_Textures[i]->setDevice(device());
 
                 if (!m_Textures[i]->load(FullPath)) {

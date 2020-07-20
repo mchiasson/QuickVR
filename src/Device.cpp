@@ -212,10 +212,11 @@ static int Compare(const ovrGraphicsLuid& lhs, const ovrGraphicsLuid& rhs)
 Device::Device(Node *parent) : Node(parent)
 {
     setObjectName("Device");
-    m_device = this;
+    s_device = this;
 
     m_defaultHeadset = new Headset(this);
     m_headset = m_defaultHeadset;
+    m_headset->componentComplete();
 
     connect(this, &QQuickItem::windowChanged,
             [&](QQuickWindow* window) {

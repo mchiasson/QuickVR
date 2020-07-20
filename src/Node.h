@@ -15,6 +15,7 @@ class Node : public QQuickItem
     Q_PROPERTY(QVector3D linearVelocity READ linearVelocity WRITE setLinearVelocity NOTIFY linearVelocityChanged)
 
     friend class Device;
+
 public:
     explicit Node(Node *parent = nullptr);
 
@@ -24,14 +25,20 @@ public:
     void setAngularVelocity(const QVector3D &newAngularVelocity);
     void setLinearVelocity(const QVector3D &newLinearVelocity);
 
+    void setDevice(Device* newDevice);
+
 signals:
 
     void angularVelocityChanged(const QVector3D &newAngularVelocity);
     void linearVelocityChanged(const QVector3D &newLinearVelocity);
 
+protected slots:
+
+    void onUpdateGUIThread();
+
 protected:
 
-    static Device *device() { return m_device; }
+    static Device *device() { return s_device; }
 
     virtual void onInit() {}
     virtual void onShutdown() {}
@@ -44,7 +51,7 @@ protected:
 
 private:
 
-    static Device* m_device;
+    static Device* s_device;
 };
 
 #endif // NODE_H

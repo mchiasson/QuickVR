@@ -68,12 +68,6 @@ protected:
     virtual void onShutdown() override;
     void onRender();
 
-    QString m_source;
-    Status m_status = None;
-
-    QFutureWatcher<QSharedPointer<Assimp::Importer>> m_importerFutureWatcher;
-    const aiScene *m_pScene = nullptr;
-
     struct BoneInfo
     {
         glm::mat4 BoneOffset;
@@ -108,7 +102,7 @@ protected:
                   const aiMesh* paiMesh,
                   QVector<glm::vec3>& Positions,
                   QVector<glm::vec3>& Normals,
-                  QVector<QVector2D>& TexCoords,
+                  QVector<glm::vec2>& TexCoords,
                   QVector<VertexBoneData>& Bones,
                   QVector<uint32_t>& Indices);
     void LoadBones(uint32_t MeshIndex, const aiMesh* paiMesh, QVector<VertexBoneData>& Bones);
@@ -122,6 +116,12 @@ protected:
         BONE_VB,
         NUM_VBs
     };
+
+    QString m_source;
+    Status m_status = None;
+
+    QFutureWatcher<QSharedPointer<Assimp::Importer>> m_importerFutureWatcher;
+    const aiScene *m_pScene = nullptr;
 
     GLuint m_VAO = 0;
     GLuint m_Buffers[NUM_VBs] = {};
