@@ -413,16 +413,7 @@ bool SkinnedMesh::InitMaterials(const aiScene* pScene)
 
                 m_Textures[i] = new Texture(this);
                 m_Textures[i]->setDevice(device());
-
-                if (!m_Textures[i]->load(FullPath)) {
-                    qCritical("Error loading texture '%s'\n", qPrintable(FullPath));
-                    delete m_Textures[i];
-                    m_Textures[i] = NULL;
-                    Ret = false;
-                }
-                else {
-                    qCritical("%d - loaded texture '%s'\n", i, qPrintable(FullPath));
-                }
+                m_Textures[i]->setSource(FullPath);
             }
         }
     }

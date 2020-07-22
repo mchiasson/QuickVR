@@ -4,6 +4,7 @@
 #include <stb_image.h>
 
 #include <QDebug>
+#include <QMutexLocker>
 
 Texture::Bitmap::~Bitmap()
 {
@@ -16,37 +17,75 @@ Texture::Bitmap::~Bitmap()
 
 Texture::Texture(Node *parent) : Node(parent)
 {
-    connect(this, SIGNAL(sourceChanged), this, SLOT(loadImage), Qt::QueuedConnection);
-    connect(this, SIGNAL(targetChanged), this, SLOT(loadImage), Qt::QueuedConnection);
-    connect(this, SIGNAL(formatChanged), this, SLOT(loadImage), Qt::QueuedConnection);
     connect(&m_dataFutureWatcher, &QFutureWatcher<QByteArray>::finished, this, &Texture::onImageDecodingComplete);
 }
 
 void Texture::setSource(const QString &newSource)
 {
+    QMutexLocker lock(&m_mutex);
     if (m_source != newSource)
     {
         m_source = newSource;
         emit sourceChanged(newSource);
+        setStatus(StatusLoading);
+        m_dirtyFlag |= DirtySource;
     }
-
 }
 
 void Texture::setTarget(Target newTarget)
 {
+    QMutexLocker lock(&m_mutex);
     if (m_target != newTarget)
     {
         m_target = newTarget;
         emit targetChanged(newTarget);
+        setStatus(StatusLoading);
+        m_dirtyFlag |= DirtyTarget;
     }
 }
 
 void Texture::setFormat(Format newFormat)
 {
+    QMutexLocker lock(&m_mutex);
     if (m_format != newFormat)
     {
         m_format = newFormat;
         emit formatChanged(newFormat);
+        setStatus(StatusLoading);
+        m_dirtyFlag |= DirtyFormat;
+    }
+}
+
+void Texture::setFilter(Filter newFilter)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_filter != newFilter)
+    {
+        m_filter = newFilter;
+        emit filterChanged(newFilter);
+        m_dirtyFlag |= DirtyFilter;
+    }
+}
+
+void Texture::setWrapS(Wrap newWrap)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_wrapS != newWrap)
+    {
+        m_wrapS = newWrap;
+        emit wrapSChanged(newWrap);
+        m_dirtyFlag |= DirtyWrapS;
+    }
+}
+
+void Texture::setWrapT(Wrap newWrap)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_wrapT != newWrap)
+    {
+        m_wrapT = newWrap;
+        emit wrapTChanged(newWrap);
+        m_dirtyFlag |= DirtyWrapT;
     }
 }
 
@@ -60,7 +99,7 @@ void Texture::setStatus(Status newStatus)
 }
 
 
-void Texture::bind(int slot) const
+void Texture::bind(int slot)
 {
     if (handle())
     {
@@ -69,63 +108,37 @@ void Texture::bind(int slot) const
     }
 }
 
-void Texture::setSampleMode(int sm)
+void Texture::onImageDecodingComplete()
 {
-    if (handle() == 0) return;
-
-    bind(0);
-
-    switch (sm & Sample_FilterMask)
+    QSharedPointer<Bitmap> bitmap = m_dataFutureWatcher.result();
+    if (bitmap->decodedData)
     {
-    case Sample_Linear:
-        device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        if(GL_EXT_texture_filter_anisotropic)
-            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
-        break;
-
-    case Sample_Anisotropic:
-        device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        if(GL_EXT_texture_filter_anisotropic)
-            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 4);
-        break;
-
-    case Sample_Nearest:
-        device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        if(GL_EXT_texture_filter_anisotropic)
-            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
-        break;
+        setStatus(StatusProcessing);
+        m_dirtyFlag |= DirtyBitmap;
     }
-
-    switch (sm & Sample_AddressMask)
+    else
     {
-    case Sample_Repeat:
-        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, GL_REPEAT);
-        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, GL_REPEAT);
-        break;
-
-    case Sample_Clamp:
-        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        break;
-
-    case Sample_ClampBorder:
-        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        break;
+        setStatus(StatusError);
     }
 }
 
-void Texture::loadImage() {
-    if (status() != StatusLoading)
+void Texture::onUpdate()
+{
+    if (m_dirtyFlag == DirtyNone)
+        return;
+
+    QMutexLocker lock(&m_mutex);
+
+    if (!handle())
     {
-        setStatus(StatusLoading);
+        device()->glGenTextures(1, &m_handle);
+    }
+
+    if (m_dirtyFlag & (DirtySource|DirtyTarget|DirtyFormat))
+    {
         // Load the scene from a thread in Qt's thread pool.
         m_dataFutureWatcher.setFuture(QtConcurrent::run([](QString path, Target target, Format format)->QSharedPointer<Bitmap> {
             QSharedPointer<Bitmap> bitmap(new Bitmap);
-            bitmap->target = target;
 
             QFile content;
             if (path.startsWith("qrc:", Qt::CaseInsensitive))
@@ -144,7 +157,16 @@ void Texture::loadImage() {
             if (content.open(QFile::ReadOnly))
             {
                 QByteArray encodedData = content.readAll();
-                bitmap->decodedData = stbi_load_from_memory((const uint8_t *)encodedData.constData(), encodedData.size(), &bitmap->width, &bitmap->height, &bitmap->channelCount, format);
+                int requestDecodeFormat = 0;
+                switch (format)
+                {
+                case FormatGrey:      requestDecodeFormat = STBI_grey;       break;
+                case FormatGreyAlpha: requestDecodeFormat = STBI_grey_alpha; break;
+                case FormatRGB:       requestDecodeFormat = STBI_rgb;        break;
+                case FormatRGBA:      requestDecodeFormat = STBI_rgb_alpha;  break;
+                }
+
+                bitmap->decodedData = stbi_load_from_memory((const uint8_t *)encodedData.constData(), encodedData.size(), &bitmap->width, &bitmap->height, &bitmap->channelCount, requestDecodeFormat);
 
                 if (!bitmap->decodedData)
                 {
@@ -159,86 +181,101 @@ void Texture::loadImage() {
             }
 
             return bitmap;
-        }, m_source, (Target)m_target, m_format));
-    }
-}
+        }, source(), target(), format()));
 
-void Texture::onImageDecodingComplete()
-{
-    QSharedPointer<Bitmap> bitmap = m_dataFutureWatcher.result();
-    if (bitmap->decodedData)
-    {
-        setStatus(StatusProcessing);
+        m_dirtyFlag &= ~(DirtySource|DirtyTarget|DirtyFormat);
     }
-    else
-    {
-        setStatus(StatusError);
-    }
-}
 
-void Texture::onUpdate()
-{
-    switch(status())
-    {
-    case StatusProcessing:
+    if (m_dirtyFlag & DirtyBitmap)
     {
         QSharedPointer<Bitmap> bitmap = m_dataFutureWatcher.result();
 
-        GLenum glformat, gltype = GL_UNSIGNED_BYTE;
-        switch(bitmap->channelCount)
+        switch (target())
         {
-        case 1:
-            glformat = GL_RED;
-            break;
-        case 2:
-            glformat = GL_RG;
-            break;
-        case 3:
-            glformat = GL_RGB;
-            break;
-        case 4:
-            glformat = GL_RGBA;
-            break;
-        default:
-            qCritical() << "Unknown texture format:" << bitmap->channelCount;
-            setStatus(StatusError);
-            return;
-        }
-
-        GLenum glTarget;
-        switch (bitmap->target)
-        {
-        case TargetTexture2D:
-            glTarget = GL_TEXTURE_2D;
+        case GL_TEXTURE_2D:
             device()->glEnable(GL_TEXTURE_2D);
             break;
-        case TargetTextureCubeMap:
-            glTarget = GL_TEXTURE_CUBE_MAP;
+        case GL_TEXTURE_CUBE_MAP:
             device()->glEnable(GL_TEXTURE_CUBE_MAP);
             break;
         default:
-            qCritical() << "Unknown texture target:" << bitmap->target;
+            qCritical() << "Unknown texture target:" << target();
             setStatus(StatusError);
             return;
         }
 
-        if (!handle())
+        switch(format())
         {
-            device()->glGenTextures(1, &m_handle);
+        case FormatGrey:
+            device()->glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            device()->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            break;
+        case FormatGreyAlpha:
+            device()->glPixelStorei(GL_PACK_ALIGNMENT, 2);
+            device()->glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+            break;
+        case FormatRGB:
+            device()->glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            device()->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            break;
+        case FormatRGBA:
+            device()->glPixelStorei(GL_PACK_ALIGNMENT, 4);
+            device()->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            break;
         }
 
-        device()->glBindTexture(glTarget, handle());
-        device()->glTexImage2D(glTarget, 0, glformat, bitmap->width, bitmap->height, 0, glformat, gltype, bitmap->decodedData);
-        device()->glGenerateMipmap(glTarget);
-
-        setSampleMode(Sample_Anisotropic | Sample_Clamp);
+        device()->glBindTexture(target(), handle());
+        device()->glTexImage2D(target(), 0, format(), bitmap->width, bitmap->height, 0, format(), GL_UNSIGNED_BYTE, bitmap->decodedData);
+        device()->glGenerateMipmap(target());
 
         stbi_image_free(bitmap->decodedData);
         bitmap->decodedData = nullptr;
-        break;
+
+        m_dirtyFlag &= ~(DirtyBitmap);
     }
-    default:
-        break;
+
+    if (m_dirtyFlag & DirtyFilter)
+    {
+        device()->glBindTexture(target(), handle());
+
+        switch(filter())
+        {
+        case FilterNone:
+            device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+            break;
+        case FilterBilinear:
+            device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+            break;
+        case FilterTrilinear:
+            device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+            break;
+        case FilterAnisotropic:
+            device()->glTexParameteri(target(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            device()->glTexParameteri(target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, 4);
+            break;
+        }
+        m_dirtyFlag &= ~(DirtyFilter);
+    }
+
+    if (m_dirtyFlag & DirtyWrapS)
+    {
+        device()->glBindTexture(target(), handle());
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_S, wrapS());
+        m_dirtyFlag &= ~(DirtyWrapS);
+    }
+
+    if (m_dirtyFlag & DirtyWrapT)
+    {
+        device()->glBindTexture(target(), handle());
+        device()->glTexParameteri(target(), GL_TEXTURE_WRAP_T, wrapT());
+        m_dirtyFlag &= ~(DirtyWrapT);
     }
 }
 

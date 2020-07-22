@@ -16,6 +16,8 @@ add_library(quickvrplugin SHARED
 
     src/BaseLight.cpp
     src/BaseLight.h
+    src/Buffer.cpp
+    src/Buffer.h
     src/DebugCallback.cpp
     src/DebugCallback.h
     src/Device.cpp
@@ -40,6 +42,8 @@ add_library(quickvrplugin SHARED
     src/Texture.h
     src/Headset.cpp
     src/Headset.h
+    src/VertexAttribute.cpp
+    src/VertexAttribute.h
     #src/VRRenderer.cpp
     #src/VRRenderer.h
     #src/VRWindow.cpp
